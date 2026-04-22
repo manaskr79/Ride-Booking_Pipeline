@@ -1,0 +1,118 @@
+// ============================================================
+// Power BI DAX Measures — Ride Booking Pipeline Dashboard
+// ============================================================
+// Tables connected to Delta Lake via Azure Databricks connector
+// or DirectQuery on ADLS Gen2 (Parquet/Delta format)
+// ============================================================
+
+// ─── KPI Cards ──────────────────────────────────────────────
+
+Total Rides Today =
+CALCULATE(
+    SUM(ride_demand_by_zone[total_requests]),
+    FILTER(ride_demand_by_zone,
+        DATE(YEAR(ride_demand_by_zone[window_start]),
+             MONTH(ride_demand_by_zone[window_start]),
+             DAY(ride_demand_by_zone[window_start])) = TODAY()
+    )
+)
+
+Total Revenue Today =
+CALCULATE(
+    SUM(revenue_analytics[total_revenue]),
+    FILTER(revenue_analytics,
+        DATE(YEAR(revenue_analytics[window_start]),
+             MONTH(revenue_analytics[window_start]),
+             DAY(revenue_analytics[window_start])) = TODAY()
+    )
+)
+
+Avg Surge Multiplier =
+AVERAGE(surge_pricing_metrics[avg_surge])
+
+Avg Driver Rating =
+AVERAGE(revenue_analytics[avg_driver_rating])
+
+Cancellation Rate % =
+DIVIDE(
+    SUM(cancellation_analytics[cancelled]),
+    SUM(cancellation_analytics[total]),
+    0
+) * 100
+
+Avg Wait Time (min) =
+AVERAGE(revenue_analytics[avg_wait_time])
+
+
+// ─── Time Intelligence ──────────────────────────────────────
+
+Revenue WoW Change % =
+VAR ThisWeek = CALCULATE(SUM(revenue_analytics[total_revenue]),
+    DATESINPERIOD(revenue_analytics[window_start], TODAY(), -7, DAY))
+VAR LastWeek = CALCULATE(SUM(revenue_analytics[total_revenue]),
+    DATESINPERIOD(revenue_analytics[window_start], TODAY()-7, -7, DAY))
+RETURN DIVIDE(ThisWeek - LastWeek, LastWeek, 0) * 100
+
+Peak Hour Demand =
+MAXX(
+    SUMMARIZE(
+        ride_demand_by_zone,
+        HOUR(ride_demand_by_zone[window_start]),
+        "HourlyDemand", SUM(ride_demand_by_zone[total_requests])
+    ),
+    [HourlyDemand]
+)
+
+
+// ─── Zone Analytics ─────────────────────────────────────────
+
+Top Zone by Revenue =
+FIRSTNONBLANK(
+    TOPN(1,
+        SUMMARIZE(revenue_analytics, revenue_analytics[zone_id],
+                  "ZoneRevenue", SUM(revenue_analytics[total_revenue])),
+        [ZoneRevenue], DESC
+    ),
+    1
+)
+
+Demand Heatmap Score =
+VAR MaxDemand = MAXX(ALL(ride_demand_by_zone[zone_id]),
+    CALCULATE(SUM(ride_demand_by_zone[total_requests])))
+RETURN
+DIVIDE(
+    SUM(ride_demand_by_zone[total_requests]),
+    MaxDemand, 0
+) * 100
+
+
+// ─── Surge Pricing Visuals ───────────────────────────────────
+
+High Surge Rides % =
+DIVIDE(
+    SUM(surge_pricing_metrics[high_surge_count]),
+    SUM(surge_pricing_metrics[total_rides]),
+    0
+) * 100
+
+Surge Tier =
+SWITCH(
+    TRUE(),
+    [Avg Surge Multiplier] >= 2.0, "🔴 Critical",
+    [Avg Surge Multiplier] >= 1.5, "🟠 High",
+    [Avg Surge Multiplier] >= 1.2, "🟡 Moderate",
+    "🟢 Normal"
+)
+
+
+// ─── Driver Utilization ─────────────────────────────────────
+
+Driver Availability % =
+DIVIDE(
+    SUM(location_density[available_drivers]),
+    SUM(location_density[driver_pings]),
+    0
+) * 100
+
+Avg Driver Speed =
+AVERAGE(location_density[avg_speed_kmh])
