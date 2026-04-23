@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RidePulse — Real-Time Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0a0c10; --panel:#0f1318; --border:#1c2230; --border2:#243040;
+    --accent:#00d4ff; --accent2:#ff6b35; --accent3:#39ff14; --accent4:#f7c948;
+    --red:#ff3d5a; --muted:#4a5568; --text:#c8d6e5; --text2:#7a90a8;
+  }
+  body { background:var(--bg); color:var(--text); font-family:'Rajdhani',sans-serif; font-size:14px; min-height:100vh; overflow-x:hidden; }
+
+  /* TOP BAR */
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100; }
+  .topbar-left { display:flex; align-items:center; gap:14px; }
+  .logo { font-size:18px; font-weight:700; letter-spacing:2px; color:var(--accent); }
+  .logo span { color:var(--text2); font-weight:400; }
+  .live-badge { display:flex; align-items:center; gap:6px; background:rgba(57,255,20,0.08); border:1px solid rgba(57,255,20,0.3); border-radius:4px; padding:3px 10px; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--accent3); letter-spacing:1px; }
+  .live-dot { width:6px; height:6px; border-radius:50%; background:var(--accent3); animation:pulse 1.4s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+  .topbar-right { display:flex; align-items:center; gap:20px; }
+  .last-refresh { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text2); }
+  .tabs { display:flex; gap:2px; }
+  .tab { padding:5px 14px; cursor:pointer; font-size:12px; font-weight:600; letter-spacing:1px; border-radius:3px; color:var(--text2); transition:all .2s; border:1px solid transparent; }
+  .tab.active { background:rgba(0,212,255,0.12); color:var(--accent); border-color:rgba(0,212,255,0.3); }
+  .tab:hover:not(.active) { color:var(--text); background:var(--border); }
+
+  /* LAYOUT */
+  .dashboard { padding:16px 20px; display:flex; flex-direction:column; gap:16px; }
+  .page { display:none; flex-direction:column; gap:16px; }
+  .page.active { display:flex; }
+
+  /* KPI */
+  .kpi-row { display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
+  .kpi { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:14px 16px; position:relative; overflow:hidden; transition:border-color .2s,transform .15s; animation:fadeUp .4s ease both; }
+  .kpi:hover { border-color:var(--border2); transform:translateY(-2px); }
+  .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+  .kpi.c1::before{background:var(--accent);} .kpi.c2::before{background:var(--accent2);} .kpi.c3::before{background:var(--accent4);} .kpi.c4::before{background:var(--accent3);} .kpi.c5::before{background:var(--red);} .kpi.c6::before{background:#a78bfa;}
+  .kpi-label { font-size:10px; letter-spacing:1.5px; color:var(--text2); text-transform:uppercase; margin-bottom:8px; }
+  .kpi-val { font-size:26px; font-weight:700; line-height:1; }
+  .kpi.c1 .kpi-val{color:var(--accent);} .kpi.c2 .kpi-val{color:var(--accent2);} .kpi.c3 .kpi-val{color:var(--accent4);} .kpi.c4 .kpi-val{color:var(--accent3);} .kpi.c5 .kpi-val{color:var(--red);} .kpi.c6 .kpi-val{color:#a78bfa;}
+  .kpi-delta { display:inline-flex; align-items:center; gap:3px; margin-top:4px; font-size:11px; }
+  .kpi-delta.up{color:var(--accent3);} .kpi-delta.down{color:var(--red);}
+  .kpi-sub { font-size:11px; color:var(--text2); margin-top:5px; font-family:'JetBrains Mono',monospace; }
+
+  /* GRID */
+  .row2 { display:grid; gap:16px; }
+  .c2{grid-template-columns:1fr 1fr;} .c3{grid-template-columns:1fr 1fr 1fr;} .c32{grid-template-columns:3fr 2fr;} .c23{grid-template-columns:2fr 3fr;}
+
+  /* PANEL */
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:16px; animation:fadeUp .5s ease both; }
+  .panel-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .panel-title { font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text2); font-weight:600; }
+  .panel-badge { font-family:'JetBrains Mono',monospace; font-size:9px; padding:2px 8px; border-radius:3px; letter-spacing:0.5px; }
+  .badge-blue{background:rgba(0,212,255,0.1);color:var(--accent);border:1px solid rgba(0,212,255,0.25);}
+  .badge-orange{background:rgba(255,107,53,0.1);color:var(--accent2);border:1px solid rgba(255,107,53,0.25);}
+  .badge-green{background:rgba(57,255,20,0.1);color:var(--accent3);border:1px solid rgba(57,255,20,0.25);}
+  .badge-yellow{background:rgba(247,201,72,0.1);color:var(--accent4);border:1px solid rgba(247,201,72,0.25);}
+
+  .ch200{height:200px;} .ch240{height:240px;} .ch180{height:180px;}
+
+  /* SURGE */
+  .surge-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  .surge-card { background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:12px; text-align:center; }
+  .surge-type { font-size:10px; letter-spacing:1px; color:var(--text2); text-transform:uppercase; margin-bottom:8px; }
+  .surge-val { font-size:22px; font-weight:700; }
+  .surge-tier { font-size:9px; margin-top:4px; padding:2px 6px; border-radius:2px; display:inline-block; }
+  .tier-normal{background:rgba(57,255,20,0.1);color:var(--accent3);}
+  .tier-moderate{background:rgba(247,201,72,0.1);color:var(--accent4);}
+  .tier-high{background:rgba(255,107,53,0.1);color:var(--accent2);}
+  .tier-critical{background:rgba(255,61,90,0.1);color:var(--red);}
+
+  /* HEATMAP */
+  .heatmap-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:4px; }
+  .heatmap-cell { aspect-ratio:1; border-radius:4px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:default; transition:transform .15s; }
+  .heatmap-cell:hover { transform:scale(1.08); z-index:5; position:relative; }
+  .heatmap-label { font-size:8px; color:rgba(255,255,255,0.75); text-align:center; padding:0 2px; line-height:1.2; }
+  .heatmap-num { font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; color:#fff; margin-top:2px; }
+
+  /* DRIVER */
+  .driver-list { display:flex; flex-direction:column; gap:8px; }
+  .driver-row { display:flex; align-items:center; gap:10px; }
+  .driver-zone { flex:1; font-size:12px; }
+  .driver-count { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text2); min-width:42px; }
+  .driver-bar-bg { flex:2; height:6px; background:var(--border); border-radius:3px; }
+  .driver-bar { height:6px; border-radius:3px; transition:width .6s; }
+  .driver-pct { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text2); min-width:36px; text-align:right; }
+
+  /* ZONE TABLE */
+  .zone-table { width:100%; border-collapse:collapse; }
+  .zone-table th { text-align:left; font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text2); padding:6px 10px; border-bottom:1px solid var(--border); }
+  .zone-table td { padding:8px 10px; font-size:13px; border-bottom:1px solid rgba(28,34,48,0.5); }
+  .zone-table tr:hover td { background:rgba(255,255,255,0.02); }
+  .zone-name { font-weight:600; } .zone-id { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text2); }
+  .bar-cell { display:flex; align-items:center; gap:8px; }
+  .mini-bar-bg { flex:1; height:4px; background:var(--border); border-radius:2px; }
+  .mini-bar { height:4px; border-radius:2px; }
+  .bar-val { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text2); min-width:36px; text-align:right; }
+
+  /* PIE LEGEND */
+  .pie-legend { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .pie-item { display:flex; align-items:center; gap:6px; font-size:11px; }
+  .pie-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+  /* CANCEL */
+  .cancel-rows { display:flex; flex-direction:column; gap:10px; }
+  .cancel-header { display:flex; justify-content:space-between; margin-bottom:4px; font-size:12px; }
+  .cancel-zone { font-weight:600; } .cancel-pct { font-family:'JetBrains Mono',monospace; color:var(--red); font-size:11px; }
+  .cancel-bg { height:5px; background:var(--border); border-radius:3px; }
+  .cancel-fill { height:5px; border-radius:3px; background:linear-gradient(90deg,var(--accent2),var(--red)); transition:width .6s; }
+
+  /* FEED */
+  .feed { display:flex; flex-direction:column; gap:0; max-height:280px; overflow:hidden; }
+  .feed-item { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid rgba(28,34,48,0.5); animation:slideIn .3s ease; }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-8px);} to{opacity:1;transform:translateX(0);} }
+  .feed-icon { width:28px; height:28px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; }
+  .feed-icon.req{background:rgba(0,212,255,0.12);} .feed-icon.done{background:rgba(57,255,20,0.12);} .feed-icon.cancel{background:rgba(255,61,90,0.12);} .feed-icon.loc{background:rgba(247,201,72,0.12);}
+  .feed-body { flex:1; min-width:0; }
+  .feed-title { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .feed-sub { font-size:10px; color:var(--text2); font-family:'JetBrains Mono',monospace; }
+  .feed-time { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted); flex-shrink:0; }
+
+  /* OPS STATS */
+  .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .stat-item { background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:12px; }
+  .stat-label { font-size:9px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text2); margin-bottom:6px; }
+  .stat-val { font-size:20px; font-weight:700; }
+
+  @keyframes fadeUp { from{opacity:0;transform:translateY(12px);} to{opacity:1;transform:translateY(0);} }
+  ::-webkit-scrollbar{width:4px;height:4px;} ::-webkit-scrollbar-track{background:var(--bg);} ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo">RIDE<span>PULSE</span></div>
+    <div class="live-badge"><div class="live-dot"></div>LIVE · KAFKA + SPARK + DELTA LAKE</div>
+  </div>
+  <div class="topbar-right">
+    <div class="tabs">
+      <div class="tab active" onclick="showPage('overview')">OVERVIEW</div>
+      <div class="tab" onclick="showPage('zones')">ZONES</div>
+      <div class="tab" onclick="showPage('revenue')">REVENUE</div>
+      <div class="tab" onclick="showPage('ops')">OPERATIONS</div>
+    </div>
+    <div class="last-refresh" id="refreshTime">--:--:--</div>
+  </div>
+</div>
+
+<div class="dashboard">
+
+  <!-- PAGE 1: OVERVIEW -->
+  <div class="page active" id="page-overview">
+    <div class="kpi-row">
+      <div class="kpi c1"><div class="kpi-label">Total Rides Today</div><div class="kpi-val" id="kpi-rides">4,821</div><div class="kpi-delta up">▲ 8.3% vs yesterday</div></div>
+      <div class="kpi c2"><div class="kpi-label">Revenue Today</div><div class="kpi-val" id="kpi-revenue">₹2.14L</div><div class="kpi-delta up">▲ 11.2% WoW</div></div>
+      <div class="kpi c3"><div class="kpi-label">Avg Surge</div><div class="kpi-val" id="kpi-surge">1.42×</div><div class="kpi-sub" id="kpi-surge-tier">🟡 MODERATE</div></div>
+      <div class="kpi c4"><div class="kpi-label">Active Drivers</div><div class="kpi-val" id="kpi-drivers">312</div><div class="kpi-delta up">▲ 67% available</div></div>
+      <div class="kpi c5"><div class="kpi-label">Cancellation Rate</div><div class="kpi-val" id="kpi-cancel">14.2%</div><div class="kpi-delta down">▼ 2.1% vs last wk</div></div>
+      <div class="kpi c6"><div class="kpi-label">Avg Wait Time</div><div class="kpi-val" id="kpi-wait">6.8 min</div><div class="kpi-sub">city-wide average</div></div>
+    </div>
+    <div class="row2 c32">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Ride Volume & Surge — Hourly</span><span class="panel-badge badge-blue">5-MIN WINDOW</span></div>
+        <div class="ch240"><canvas id="chartHourly"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Surge by Ride Type</span><span class="panel-badge badge-orange">10-MIN SLIDING</span></div>
+        <div class="surge-grid" id="surgeGrid"></div>
+      </div>
+    </div>
+    <div class="row2 c23">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Revenue Trend — Today</span><span class="panel-badge badge-yellow">HOURLY</span></div>
+        <div class="ch200"><canvas id="chartRevHour"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Live Event Feed</span><span class="panel-badge badge-green">STREAMING</span></div>
+        <div class="feed" id="liveFeed"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 2: ZONES -->
+  <div class="page" id="page-zones">
+    <div class="row2 c2">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Demand Heatmap by Zone</span><span class="panel-badge badge-blue">5-MIN TUMBLING</span></div>
+        <div class="heatmap-grid" id="heatmapGrid"></div>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:9px;color:var(--text2);letter-spacing:1px">LOW</span>
+          <div style="flex:1;height:6px;border-radius:3px;background:linear-gradient(90deg,#0a1628,#003d66,#006699,#00aacc,#00d4ff,#ff6b35,#ff3d5a)"></div>
+          <span style="font-size:9px;color:var(--text2);letter-spacing:1px">HIGH</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Driver Availability by Zone</span><span class="panel-badge badge-green">LIVE</span></div>
+        <div class="driver-list" id="driverAvail"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Zone Performance Table</span><span class="panel-badge badge-blue">ALL ZONES</span></div>
+      <table class="zone-table">
+        <thead><tr><th>Zone</th><th>Requests</th><th>Avg Fare</th><th>Avg Surge</th><th>Revenue</th><th>Cancel Rate</th></tr></thead>
+        <tbody id="zoneTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PAGE 3: REVENUE -->
+  <div class="page" id="page-revenue">
+    <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi c2"><div class="kpi-label">Total Revenue Today</div><div class="kpi-val">₹2.14L</div><div class="kpi-delta up">▲ 11.2% WoW</div></div>
+      <div class="kpi c3"><div class="kpi-label">Avg Fare Per Ride</div><div class="kpi-val">₹443</div><div class="kpi-delta up">▲ 3.1%</div></div>
+      <div class="kpi c1"><div class="kpi-label">Peak Hour Revenue</div><div class="kpi-val">₹28.4K</div><div class="kpi-sub">18:00 – 19:00</div></div>
+      <div class="kpi c4"><div class="kpi-label">Surge Revenue Share</div><div class="kpi-val">34.7%</div><div class="kpi-sub">high-surge rides</div></div>
+    </div>
+    <div class="row2 c2">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Revenue by Ride Type</span><span class="panel-badge badge-yellow">TODAY</span></div>
+        <div class="ch240"><canvas id="chartRevType"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Payment Mode Distribution</span><span class="panel-badge badge-blue">TODAY</span></div>
+        <div class="ch200"><canvas id="chartPayment"></canvas></div>
+        <div class="pie-legend" id="payLegend"></div>
+      </div>
+    </div>
+    <div class="row2 c2">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Hourly Revenue — Stacked by Type</span><span class="panel-badge badge-orange">STACKED</span></div>
+        <div class="ch240"><canvas id="chartRevStacked"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Revenue by Zone</span><span class="panel-badge badge-yellow">TODAY</span></div>
+        <div class="ch240"><canvas id="chartRevZone"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 4: OPERATIONS -->
+  <div class="page" id="page-ops">
+    <div class="row2 c3">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Cancellation Rate by Zone</span><span class="panel-badge badge-orange">15-MIN WINDOW</span></div>
+        <div class="cancel-rows" id="cancelRows"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Avg Wait Time — Last 12 Hrs</span><span class="panel-badge badge-blue">TREND</span></div>
+        <div class="ch200"><canvas id="chartWait"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Driver Rating Distribution</span><span class="panel-badge badge-green">TODAY</span></div>
+        <div class="ch200"><canvas id="chartRating"></canvas></div>
+      </div>
+    </div>
+    <div class="row2 c2">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Ride Status Breakdown</span><span class="panel-badge badge-blue">TODAY</span></div>
+        <div class="ch200"><canvas id="chartStatus"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Pipeline Health Stats</span><span class="panel-badge badge-green">LIVE</span></div>
+        <div class="stat-grid" id="opsStats"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+Chart.defaults.color='#7a90a8';
+Chart.defaults.borderColor='#1c2230';
+Chart.defaults.font.family="'JetBrains Mono',monospace";
+Chart.defaults.font.size=10;
+const G={color:'rgba(28,34,48,0.8)',drawBorder:false};
+const T={color:'#4a5568'};
+
+const ZONES=[
+  {id:'Z001',name:'City Center',base:420,drivers:58,cancel:0.16},
+  {id:'Z002',name:'Airport',base:680,drivers:42,cancel:0.09},
+  {id:'Z003',name:'Tech Park',base:380,drivers:65,cancel:0.12},
+  {id:'Z004',name:'Old City',base:310,drivers:35,cancel:0.19},
+  {id:'Z005',name:'Res. North',base:290,drivers:48,cancel:0.14},
+  {id:'Z006',name:'Mall District',base:450,drivers:64,cancel:0.11},
+];
+const RTYPES=['Economy','Premium','Shared','Auto','Bike'];
+const PMODES=['UPI','Card','Cash','Wallet'];
+const PCOLORS=['#00d4ff','#a78bfa','#ff6b35','#f7c948'];
+const HNAMES=['City Ctr','Airport','Tech Park','Old City','Res North','Mall Dist','Station','University','Hospital','Bus Stand','Stadium','Market','Lake View','Heights','Junction','Industrial','Suburbs','Central Pk','East Gate','West End','Cantt.','New Town','IT Hub','Downtown'];
+
+function r(lo,hi){return lo+Math.random()*(hi-lo);}
+function ri(lo,hi){return Math.floor(r(lo,hi+1));}
+function surge(h=new Date().getHours()){let b=1.0;if(h>=7&&h<=9)b+=0.5;else if(h>=17&&h<=20)b+=0.8;else if(h>=23||h<=4)b+=0.3;return Math.min(+(b+r(-0.1,0.15)).toFixed(2),3.0);}
+function buildHourly(){const bases=[60,40,30,25,20,30,55,180,220,160,130,150,170,155,140,160,210,280,300,250,200,160,110,80];return Array.from({length:24},(_,h)=>{const s=surge(h);const b=bases[h];return{rides:ri(b*.85,b*1.15),surge:s,revenue:b*r(320,560)*s};});}
+function getZoneData(){return ZONES.map(z=>{const req=ri(120,480);const s=surge();return{...z,requests:req,avgFare:+(z.base*s*r(.92,1.1)).toFixed(0),surge:+s.toFixed(2),revenue:+(req*z.base*s*r(.9,1.1)).toFixed(0),cancelRate:+(z.cancel*r(.85,1.2)).toFixed(3),avail:+r(.5,.85).toFixed(2),availCount:ri(Math.floor(z.drivers*.5),z.drivers)};});}
+
+let hd=buildHourly();
+const hours=Array.from({length:24},(_,i)=>`${i<10?'0'+i:i}:00`);
+let charts={};
+let totalRides=4821,totalRev=214000;
+
+function initCharts(){
+  charts.hourly=new Chart(document.getElementById('chartHourly'),{type:'bar',data:{labels:hours,datasets:[{label:'Rides',data:hd.map(d=>d.rides),backgroundColor:'rgba(0,212,255,0.25)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2},{label:'Surge×',data:hd.map(d=>d.surge),type:'line',yAxisID:'y2',borderColor:'#ff6b35',backgroundColor:'transparent',borderWidth:2,tension:.45,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{boxWidth:10}}},scales:{x:{grid:G,ticks:{...T,maxTicksLimit:12}},y:{grid:G,ticks:T},y2:{position:'right',grid:{display:false},ticks:T,min:.8,max:3}}}});
+  charts.revHour=new Chart(document.getElementById('chartRevHour'),{type:'line',data:{labels:hours,datasets:[{label:'Revenue',data:hd.map(d=>Math.round(d.revenue)),borderColor:'#f7c948',backgroundColor:'rgba(247,201,72,0.12)',borderWidth:2,tension:.45,pointRadius:0,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:G,ticks:{...T,maxTicksLimit:8}},y:{grid:G,ticks:{...T,callback:v=>`₹${(v/1000).toFixed(0)}K`}}}}});
+  charts.revType=new Chart(document.getElementById('chartRevType'),{type:'bar',data:{labels:RTYPES,datasets:[{data:RTYPES.map(()=>ri(18000,62000)),backgroundColor:['#00d4ff','#a78bfa','#39ff14','#f7c948','#ff6b35'],borderRadius:3,borderWidth:0}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:G,ticks:{...T,callback:v=>`₹${(v/1000).toFixed(0)}K`}},y:{grid:{display:false},ticks:T}}}});
+  charts.payment=new Chart(document.getElementById('chartPayment'),{type:'doughnut',data:{labels:PMODES,datasets:[{data:[38,27,21,14],backgroundColor:PCOLORS,borderWidth:2,borderColor:'#0f1318',hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false}}}});
+  const pleg=document.getElementById('payLegend');PMODES.forEach((p,i)=>{pleg.innerHTML+=`<div class="pie-item"><div class="pie-dot" style="background:${PCOLORS[i]}"></div><span>${p}: ${[38,27,21,14][i]}%</span></div>`;});
+  const c5=['#00d4ff','#a78bfa','#39ff14','#f7c948','#ff6b35'];
+  charts.revStacked=new Chart(document.getElementById('chartRevStacked'),{type:'bar',data:{labels:hours,datasets:RTYPES.map((t,i)=>({label:t,data:hd.map(d=>Math.round(d.revenue*[.35,.25,.15,.15,.1][i]*r(.9,1.1))),backgroundColor:c5[i]+'aa',borderColor:c5[i],borderWidth:1,borderRadius:1,stack:'rev'}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:10}}},scales:{x:{stacked:true,grid:G,ticks:{...T,maxTicksLimit:8}},y:{stacked:true,grid:G,ticks:{...T,callback:v=>`₹${(v/1000).toFixed(0)}K`}}}}});
+  const zd=getZoneData();
+  charts.revZone=new Chart(document.getElementById('chartRevZone'),{type:'bar',data:{labels:zd.map(z=>z.name),datasets:[{data:zd.map(z=>z.revenue),backgroundColor:'rgba(247,201,72,0.3)',borderColor:'#f7c948',borderWidth:1,borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:G,ticks:{...T,callback:v=>`₹${(v/1000).toFixed(0)}K`}},y:{grid:{display:false},ticks:T}}}});
+  charts.wait=new Chart(document.getElementById('chartWait'),{type:'line',data:{labels:hours.slice(12),datasets:[{label:'Wait (min)',data:Array.from({length:12},()=>+r(4.5,9.5).toFixed(1)),borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,0.1)',borderWidth:2,tension:.45,pointRadius:0,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:G,ticks:T},y:{grid:G,ticks:T,min:0,max:15}}}});
+  charts.rating=new Chart(document.getElementById('chartRating'),{type:'bar',data:{labels:['1★','2★','3★','4★','5★'],datasets:[{data:[12,45,120,280,380],backgroundColor:['#ff3d5a','#ff6b35','#f7c948','#39ff14','#00d4ff'],borderRadius:3,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:T},y:{grid:G,ticks:T}}}});
+  charts.status=new Chart(document.getElementById('chartStatus'),{type:'doughnut',data:{labels:['Completed','Cancelled','In Progress','Requested'],datasets:[{data:[3842,682,181,116],backgroundColor:['#39ff14','#ff3d5a','#00d4ff','#f7c948'],borderWidth:2,borderColor:'#0f1318',hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right',labels:{boxWidth:10,padding:10}}}}});
+}
+
+function renderSurge(){
+  document.getElementById('surgeGrid').innerHTML=RTYPES.map(t=>{const s=surge();let tier='NORMAL',cls='tier-normal';if(s>=2){tier='CRITICAL';cls='tier-critical';}else if(s>=1.5){tier='HIGH';cls='tier-high';}else if(s>=1.2){tier='MODERATE';cls='tier-moderate';}const col=s>=2?'#ff3d5a':s>=1.5?'#ff6b35':s>=1.2?'#f7c948':'#39ff14';return`<div class="surge-card"><div class="surge-type">${t}</div><div class="surge-val" style="color:${col}">${s}×</div><div class="surge-tier ${cls}">${tier}</div></div>`;}).join('');
+}
+
+function heatColor(v){if(v<.2)return'#0a1628';if(v<.4)return'#003d66';if(v<.55)return'#006699';if(v<.7)return'#009acc';if(v<.82)return'#00c4ee';if(v<.9)return'#ff8c55';return'#ff3d5a';}
+function renderHeatmap(){document.getElementById('heatmapGrid').innerHTML=Array.from({length:24},(_,i)=>{const v=+r(.1,1).toFixed(2);return`<div class="heatmap-cell" style="background:${heatColor(v)}" title="${HNAMES[i]}: ${Math.round(v*100)}"><div class="heatmap-label">${HNAMES[i]}</div><div class="heatmap-num">${Math.round(v*100)}</div></div>`;}).join('');}
+
+function renderDriverAvail(){document.getElementById('driverAvail').innerHTML=getZoneData().map(z=>{const pct=Math.round(z.avail*100);const bc=pct>70?'#39ff14':pct>50?'#f7c948':'#ff6b35';return`<div class="driver-row"><div class="driver-zone">${z.name}</div><div class="driver-count">${z.availCount}/${z.drivers}</div><div class="driver-bar-bg"><div class="driver-bar" style="width:${pct}%;background:${bc}"></div></div><div class="driver-pct">${pct}%</div></div>`;}).join('');}
+
+function renderZoneTable(){document.getElementById('zoneTableBody').innerHTML=getZoneData().map(z=>{const cc=z.cancelRate>.18?'#ff3d5a':z.cancelRate>.13?'#f7c948':'#39ff14';return`<tr><td><div class="zone-name">${z.name}</div><div class="zone-id">${z.id}</div></td><td><div class="bar-cell"><div class="mini-bar-bg"><div class="mini-bar" style="width:${(z.requests/480*100).toFixed(0)}%;background:#00d4ff"></div></div><div class="bar-val">${z.requests}</div></div></td><td><span style="font-family:'JetBrains Mono',monospace;color:#f7c948">₹${z.avgFare}</span></td><td><span style="color:${z.surge>=1.5?'#ff6b35':'#f7c948'}">${z.surge}×</span></td><td><div class="bar-cell"><div class="mini-bar-bg"><div class="mini-bar" style="width:${(z.revenue/250000*100).toFixed(0)}%;background:#f7c948"></div></div><div class="bar-val">₹${(z.revenue/1000).toFixed(0)}K</div></div></td><td><span style="color:${cc}">${(z.cancelRate*100).toFixed(1)}%</span></td></tr>`;}).join('');}
+
+function renderCancelRows(){document.getElementById('cancelRows').innerHTML=getZoneData().map(z=>{const pct=(z.cancelRate*100).toFixed(1);return`<div class="cancel-row"><div class="cancel-header"><span class="cancel-zone">${z.name}</span><span class="cancel-pct">${pct}%</span></div><div class="cancel-bg"><div class="cancel-fill" style="width:${Math.min(pct*4,100)}%"></div></div></div>`;}).join('');}
+
+function renderOpsStats(){const stats=[{l:'Avg Trip Duration',v:`${r(14,22).toFixed(1)} min`,c:'#00d4ff'},{l:'Avg Distance',v:`${r(6.2,12.8).toFixed(1)} km`,c:'#f7c948'},{l:'Kafka Events/sec',v:`${r(.04,.08).toFixed(3)}`,c:'#39ff14'},{l:'Spark Lag',v:`${ri(8,28)}s`,c:'#a78bfa'},{l:'Delta Writes/hr',v:`${ri(120,180)}`,c:'#ff6b35'},{l:'Avg Driver Rating',v:`${r(4.1,4.7).toFixed(2)} ★`,c:'#f7c948'}];document.getElementById('opsStats').innerHTML=stats.map(s=>`<div class="stat-item"><div class="stat-label">${s.l}</div><div class="stat-val" style="color:${s.c}">${s.v}</div></div>`).join('');}
+
+const feedDefs=[{t:'req',icon:'🚕',lbl:z=>`Ride Requested — ${z}`,sub:()=>`RD-${Math.random().toString(36).substr(2,8).toUpperCase()}`},{t:'done',icon:'✅',lbl:z=>`Ride Completed — ${z}`,sub:()=>`Fare: ₹${ri(80,600)} · ${r(3,5).toFixed(1)}★`},{t:'cancel',icon:'❌',lbl:z=>`Cancelled — ${z}`,sub:()=>['Driver too far','Changed plans','Price too high'][ri(0,2)]},{t:'loc',icon:'📍',lbl:z=>`Driver Ping — ${z}`,sub:()=>`DRV-${ri(1000,9999)} · ${ri(0,60)} km/h`}];
+function addFeed(){const feed=document.getElementById('liveFeed');if(!feed)return;const f=feedDefs[ri(0,3)];const zone=ZONES[ri(0,5)].name;const now=new Date();const ts=`${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;const el=document.createElement('div');el.className='feed-item';el.innerHTML=`<div class="feed-icon ${f.t}">${f.icon}</div><div class="feed-body"><div class="feed-title">${f.lbl(zone)}</div><div class="feed-sub">${f.sub()}</div></div><div class="feed-time">${ts}</div>`;feed.prepend(el);while(feed.children.length>8)feed.removeChild(feed.lastChild);}
+
+function updateKPIs(){totalRides+=ri(0,3);totalRev+=ri(0,600);document.getElementById('kpi-rides').textContent=totalRides.toLocaleString('en-IN');document.getElementById('kpi-revenue').textContent=`₹${(totalRev/100000).toFixed(2)}L`;const s=surge();document.getElementById('kpi-surge').textContent=`${s}×`;document.getElementById('kpi-surge-tier').textContent=s>=2?'🔴 CRITICAL':s>=1.5?'🟠 HIGH':s>=1.2?'🟡 MODERATE':'🟢 NORMAL';document.getElementById('kpi-drivers').textContent=ri(290,340);document.getElementById('kpi-cancel').textContent=`${r(12,17).toFixed(1)}%`;document.getElementById('kpi-wait').textContent=`${r(5.5,8.5).toFixed(1)} min`;document.getElementById('refreshTime').textContent=new Date().toLocaleTimeString();}
+
+function showPage(name){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('page-'+name).classList.add('active');document.querySelectorAll('.tab').forEach(t=>{if(t.textContent.toLowerCase()===name)t.classList.add('active');});}
+
+initCharts();renderSurge();renderHeatmap();renderDriverAvail();renderZoneTable();renderCancelRows();renderOpsStats();
+for(let i=0;i<6;i++)addFeed();
+setInterval(addFeed,2200);
+setInterval(updateKPIs,4000);
+setInterval(()=>{renderSurge();renderHeatmap();renderDriverAvail();},8000);
+setInterval(()=>{renderZoneTable();renderCancelRows();renderOpsStats();},12000);
+setInterval(()=>{hd=buildHourly();charts.hourly.data.datasets[0].data=hd.map(d=>d.rides);charts.hourly.data.datasets[1].data=hd.map(d=>d.surge);charts.hourly.update('none');charts.revHour.data.datasets[0].data=hd.map(d=>Math.round(d.revenue));charts.revHour.update('none');},15000);
+</script>
+</body>
+</html>
